@@ -1,9 +1,10 @@
 import tensorflow as tf
 import keras
 import vtx
+import vtxops
 import numpy
 
-class E2ERef():
+class E2EMax():
     def __init__(self,
         nbins=256,
         ntracks=250, 
@@ -50,7 +51,7 @@ class E2ERef():
         self.histValueInputLayer = keras.layers.Input([self.ntracks])
         self.histWeightInputLayer = keras.layers.Input([self.ntracks,self.nweights])
         
-        self.histLayer = vtx.nn.KDELayer(
+        self.histLayer = vtxops.KDEHistogram(
             nbins=self.nbins,
             start=-15,
             end=15
@@ -61,10 +62,10 @@ class E2ERef():
         
         self.patternConvLayers = []
         for ilayer,(filterSize,kernelSize) in enumerate([
-            [16,4],
-            [16,4],
-            [16,4],
-            [16,4],
+            [16,3],
+            #[16,4],
+            #[16,4],
+            #[16,4],
         ]):
             self.patternConvLayers.append(
                 keras.layers.Conv1D(
@@ -78,29 +79,23 @@ class E2ERef():
                 )
             )
             
-        self.positionInputLayer = keras.layers.Input(patternConvLayers[-1].shape[1:])
+        #self.positionInputLayer = keras.layers.Input(self.patternConvLayers[-1].shape[1:])
             
-        self.positionConvLayers = []
-        for ilayer,(filterSize,kernelSize,strides) in enumerate([
-            [16,1,1],
-            [16,1,1],
-            [8,16,1],
-            [8,1,1],
-        ]):
-            self.positionConvLayers.append(
-                keras.layers.Conv1D(
-                    filterSize,
-                    kernelSize,
-                    strides=strides,
-                    padding='same',
-                    activation=self.activation,
+        self.positionMax = vtxops.HistogramMax()
+        
+        self.positionDenseLayers = []
+        for ilayer,nodes in enumerate([20]):
+            self.positionDenseLayers.extend([
+                keras.layers.Dense(
+                    nodes,
+                    activation='relu',
                     kernel_initializer='lecun_normal',
                     kernel_regularizer=keras.regularizers.l2(regloss),
-                    name='position_'+str(ilayer+1)
-                )
-            )
-
-        self.positionDenseLayers = [
+                    name='position_dense_'+str(ilayer+1)
+                ),
+                keras.layers.Dropout(0.1) 
+            ])
+        self.positionDenseLayers.append(
             keras.layers.Dense(
                 1,
                 activation=None,
@@ -108,7 +103,7 @@ class E2ERef():
                 kernel_regularizer=keras.regularizers.l2(regloss),
                 name='position_final'
             )
-        ]
+        )
         
         if self.nlatent>0:
             self.latentDenseLayers = [
@@ -175,23 +170,8 @@ class E2ERef():
     def getPVPosition(self,hists):
         #pattern [batch,bins,filters]
         pattern = self.applyLayerList(hists,self.patternConvLayers)
-        '''
-        def maxpos(x):
-            #xT = tf.nn.relu(tf.transpose(x,[0,2,1])) #[batch,filters,nbins]
-            halfBinWidth = 30./256.*0.5
-            binCenter = tf.constant(numpy.linspace(-15+halfBinWidth,15-halfBinWidth,256),dtype=tf.float32)
-            attention = tf.nn.softmax(x,axis=2)
-            attentionT = tf.transpose(attention,[0,2,1])
-            xT = tf.transpose(x,[0,2,1])            
-            weighted = tf.reduce_sum(tf.multiply(xT,attentionT),axis=2)
-            return weighted
 
-        flattened = keras.layers.Lambda(maxpos)(pattern)
-        '''
-        permuted = keras.layers.Lambda(lambda x: tf.transpose(x,[0,2,1]))(pattern)
-        positionConv = self.applyLayerList(permuted,self.positionConvLayers)
-        flattened = keras.layers.Flatten()(positionConv)
-        
+        flattened = self.positionMax(pattern)
         pvPosition = self.applyLayerList(flattened,self.positionDenseLayers)
         
         if self.nlatent>0:
