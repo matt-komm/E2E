@@ -47,6 +47,7 @@ install(TARGETS KDEHistogram LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${MODUL
 add_library(HistogramMaxSample
     MODULE
     HistogramMaxSample.cc
+    HistogramMaxSampleGrad.cc
 )
 target_link_libraries(HistogramMaxSample ${TensorFlow_LIBRARY})
 install(TARGETS HistogramMaxSample LIBRARY DESTINATION ${CMAKE_INSTALL_PREFIX}/${MODULENAME})

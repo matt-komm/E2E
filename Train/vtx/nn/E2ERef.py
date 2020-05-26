@@ -1,6 +1,7 @@
 import tensorflow as tf
 import keras
 import vtx
+import vtxops
 import numpy
 
 class E2ERef():
@@ -50,7 +51,7 @@ class E2ERef():
         self.histValueInputLayer = keras.layers.Input([self.ntracks])
         self.histWeightInputLayer = keras.layers.Input([self.ntracks,self.nweights])
         
-        self.histLayer = vtx.nn.KDELayer(
+        self.histLayer = vtxops.KDEHistogram(
             nbins=self.nbins,
             start=-15,
             end=15
@@ -78,7 +79,7 @@ class E2ERef():
                 )
             )
             
-        self.positionInputLayer = keras.layers.Input(patternConvLayers[-1].shape[1:])
+        #self.positionInputLayer = keras.layers.Input(self.patternConvLayers[-1].shape[1:])
             
         self.positionConvLayers = []
         for ilayer,(filterSize,kernelSize,strides) in enumerate([

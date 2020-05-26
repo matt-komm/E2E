@@ -15,7 +15,7 @@ class KDEHistogram(keras.engine.Layer):
     
 
     @tf.RegisterGradient("KDEHistogram")
-    def _kdehistogram_grad(op, grad):
+    def _kde_histogram_grad(op, grad):
         grad_values, grad_weights = kde_histogram_module.kde_histogram_grad(
             op.inputs[0],
             op.inputs[1],
@@ -30,14 +30,13 @@ class KDEHistogram(keras.engine.Layer):
         return [grad_values, grad_weights]
 
     def __init__(self,
-        nbins=100,
-        start=-1.,
-        end=1.,
+        nbins=256,
+        start=-15.,
+        end=15.,
         kernel="flat",
-        #kernel="triangle",
-        bandwidth_hist = 0.15,
+        bandwidth_hist = 1e-12,
         bandwidth_grad = None,
-        add_overflow = False,
+        add_overflow = True,
         **kwargs
     ):
         super(KDEHistogram, self).__init__(**kwargs)
@@ -55,30 +54,57 @@ class KDEHistogram(keras.engine.Layer):
         self.add_overflow = add_overflow
 
     def build(self, input_shape):
-        super(KDEHistogram, self).build(input_shape)
-
-    def call(self, inputs, mask=None):
-        return kde_histogram_module.kde_histogram(
-            inputs[0],
-            inputs[1],
-            self.nbins,
-            self.start,
-            self.end,
-            self.kernel,
-            self.bandwidth_hist,
-            self.bandwidth_grad,
-            self.add_overflow
-        )
+        assert isinstance(input_shape, list)
+        assert len(input_shape)==2
         
-    def compute_output_shape(self,input_shape):
-        return (input_shape[0][0],self.nbins)
+        value_shape, weights_shape = input_shape
+        
+        assert(len(value_shape)==2)
+        assert(len(weights_shape)==3)
+        
+        super(KDEHistogram, self).build(input_shape) 
+        
+        
+    def call(self, x):
+        assert isinstance(x, list)
+        assert len(x)==2
+        
+        value, weights = x
+        
+        assert(len(value.shape)==2)
+        assert(len(weights.shape)==3)
+        
+        hists = []
+        
+        for weight in tf.unstack(weights,axis=2):
+            hists.append(
+                kde_histogram_module.kde_histogram(
+                    value,
+                    weight,
+                    self.nbins,
+                    self.start,
+                    self.end,
+                    self.kernel,
+                    self.bandwidth_hist,
+                    self.bandwidth_grad,
+                    self.add_overflow
+                )
+            )
+        
+        if len(hists)==1:
+            return tf.expand_dims(hists[0],axis=2)
+        else:
+            return tf.stack(hists,axis=2)
+        
+    def compute_output_shape(self, input_shape):
+        assert isinstance(input_shape, list)
+        assert len(input_shape)==2
+        
+        value_shape, weights_shape = input_shape
+        return (weights_shape[0], self.nbins, weights_shape[2])
+        
 
-    '''
-    def get_config(self):
-        config = {}
-        base_config = super(KdeHistogram, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-    '''
 
 global_layers_list['KdeHistogram'] = KDEHistogram
 
+    

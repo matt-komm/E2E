@@ -12,22 +12,16 @@ histogram_max_sample_module = tf.load_op_library(
 )
 
 class HistogramMax(keras.engine.Layer):
-    '''
-    @tf.RegisterGradient("KDEHistogram")
-    def _sub_grad(op, grad):
-        grad_values, grad_weights = kde_histogram_module.kde_histogram_grad(
+    
+    @tf.RegisterGradient("HistogramMaxSample")
+    def _histogram_max_sample_grad(op, grad):
+        grad_hists, grad_randoms = histogram_max_sample_module.histogram_max_sample_grad(
             op.inputs[0],
             op.inputs[1],
-            grad,
-            nbins=op.get_attr("nbins"),
-            start=op.get_attr("start"),
-            end=op.get_attr("end"),
-            kernel=op.get_attr("kernel"),
-            bandwidth_grad=op.get_attr("bandwidth_grad"),
-            add_overflow=op.get_attr("add_overflow"),
+            grad
         )
-        return [grad_values, grad_weights]
-    '''
+        return [grad_hists, grad_randoms]
+    
     def __init__(self,
         **kwargs
     ):
@@ -52,12 +46,6 @@ class HistogramMax(keras.engine.Layer):
     def compute_output_shape(self,input_shape):
         return (input_shape[0],input_shape[2])
 
-    '''
-    def get_config(self):
-        config = {}
-        base_config = super(KdeHistogram, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
-    '''
 
 global_layers_list['HistogramMax'] = HistogramMax
 

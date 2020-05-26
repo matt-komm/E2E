@@ -72,8 +72,8 @@ def makeModel(nelem,nbins,start,end,kernel,bandwidth):
 class KDETest(unittest.TestCase):
 
     def testHist(self):
-        for nelem in [1,23]:
-            for nbins in [1,2,17]:
+        for nelem in [1,5]:
+            for nbins in [1,2,7]:
                 for start in [-10,0,3]:
                     for d in [1,11]:
                         #nelem = 10
@@ -108,8 +108,8 @@ class KDETest(unittest.TestCase):
                         
     
     def testGrad(self):
-        for nelem in [1,11]:
-            for nbins in [1,17]:
+        for nelem in [1,5]:
+            for nbins in [1,7]:
                 for start in [-10,0,3]:
                     for d in [1,11]:
                         for bandwidth in [1e-12,0.1,2]:
@@ -187,19 +187,47 @@ class HistogramMaxSampleTest(unittest.TestCase):
     def testHistSingle(self):
         numpy.random.seed(12345)
         sess = K.get_session()
-        for n in range(2,200,10):
-            hists = tf.placeholder(tf.float32, shape=(1, n,1))
-            randoms = tf.placeholder(tf.float32, shape=(1,1))
-            histMax = histogram_max_sample_module.histogram_max_sample(hists,randoms)
-            
-            for i in range(hists.shape[1]):
-                val = numpy.zeros(hists.shape)
-                val[0,i,0] = 1
-                self.assertEqual(sess.run(histMax,feed_dict={
-                    hists:val,
-                    randoms:numpy.random.uniform(0,1,size=(1,1))
-                })[0,0],i)
-            
+        for b in [1,5,10]:
+            for n in range(2,10,1):
+                hists = tf.placeholder(tf.float32, shape=(None, n,1))
+                randoms = tf.placeholder(tf.float32, shape=(None,1))
+                histMax = histogram_max_sample_module.histogram_max_sample(hists,randoms)
+                
+                for j in range(n):
+                    val = numpy.zeros((b,n,1))
+                    for i in range(b):
+                        val[i,j,0] = 1
+                        value = sess.run(histMax,feed_dict={
+                            hists:val,
+                            randoms:numpy.random.uniform(0,1,size=(b,1))
+                        })[i,0]
+                        self.assertAlmostEqual(value,j)
+                
+    def testHistSingleGrad(self):
+        numpy.random.seed(12345)
+        sess = K.get_session()
+        for b in [1,5,10]:
+            for n in range(2,10,1):
+                hists = tf.placeholder(tf.float32, shape=(None, n,1))
+                hists2 = tf.square(hists)
+                randoms = tf.placeholder(tf.float32, shape=(None,1))
+                histMax = histogram_max_sample_module.histogram_max_sample(hists2,randoms)
+                histMaxGrad = tf.gradients(histMax,[hists])
+                
+                for j in range(hists.shape[1]):
+                    val = numpy.zeros([b,n,1])
+                    for i in range(b):
+                        val[i,j,0] = -2.+j*0.1
+                        for k in range(hists.shape[1]):
+                            grad = sess.run(histMaxGrad,feed_dict={
+                                hists:val,
+                                randoms:numpy.random.uniform(0,1,size=(b,1))
+                            })[0][i,k,0]
+                            if j!=k:
+                                self.assertAlmostEqual(grad,0,4)
+                            else:
+                                self.assertAlmostEqual(grad,2.0*val[i,j,0],4) 
+                                
             
     def testHistSample(self):
         numpy.random.seed(12345)
@@ -249,6 +277,9 @@ if __name__ == '__main__':
     test_suite.addTest(KDETest('testGrad'))
     test_suite.addTest(HistogramMaxSampleTest('testHistSingle'))
     test_suite.addTest(HistogramMaxSampleTest('testHistSample'))
+    test_suite.addTest(HistogramMaxSampleTest('testHistSingleGrad'))
+    
     unittest.runner.TextTestRunner(verbosity=2).run(test_suite)
     
+
     
