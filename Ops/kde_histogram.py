@@ -15,7 +15,7 @@ class KDEHistogram(keras.engine.Layer):
     
 
     @tf.RegisterGradient("KDEHistogram")
-    def _sub_grad(op, grad):
+    def _kdehistogram_grad(op, grad):
         grad_values, grad_weights = kde_histogram_module.kde_histogram_grad(
             op.inputs[0],
             op.inputs[1],

@@ -150,7 +150,7 @@ class KDEHistogramGradOp:
                     gradient_values(ibatch,ivalue) = 0;
                     gradient_weights(ibatch,ivalue) = 0;
                     
-                    const float valueClamped = addOverflow ? clamp(
+                    const float valueClamped = addOverflow ? utils::clamp(
                         values(ibatch,ivalue),
                         lowerBinEdges[0],
                         lowerBinEdges[nBins]

@@ -3,7 +3,7 @@ import keras
 import vtx
 import numpy
 
-class E2EMax():
+class E2ERef():
     def __init__(self,
         nbins=256,
         ntracks=250, 
@@ -11,7 +11,7 @@ class E2EMax():
         nweights=1, 
         nlatent=0, 
         activation='relu',
-        regloss=1e-6
+        regloss=1e-10
     ):
         self.nbins = nbins
         self.ntracks = ntracks
@@ -23,44 +23,49 @@ class E2EMax():
         self.inputLayer = keras.layers.Input(shape=(self.ntracks,self.nfeatures))
         
         self.weightConvLayers = []
-        for filterSize in [20]:
+        for ilayer,filterSize in enumerate([10]):
             self.weightConvLayers.extend([
-                keras.layers.Conv1D(
+                keras.layers.Dense(
                     filterSize,
-                    1,
-                    padding='same',
                     activation=self.activation,
                     kernel_initializer='lecun_normal',
                     kernel_regularizer=keras.regularizers.l2(regloss),
+                    name='weight_'+str(ilayer+1)
                 ),
                 keras.layers.Dropout(0.1),
             ])
             
         self.weightConvLayers.append(
-            keras.layers.Conv1D(
+            keras.layers.Dense(
                 self.nweights,
-                1,
-                padding='same',
                 activation='relu', #need to use relu here to remove negative weights
                 kernel_initializer='lecun_normal',
                 kernel_regularizer=keras.regularizers.l2(regloss),
+                name='weight_final'
             ),
         )
+        #self.weightConvLayers.append(keras.layers.Dropout(0.1))
         
-        self.kdeLayer = vtx.nn.KDELayer(
-            nbins=256,
+        
+        self.histValueInputLayer = keras.layers.Input([self.ntracks])
+        self.histWeightInputLayer = keras.layers.Input([self.ntracks,self.nweights])
+        
+        self.histLayer = vtx.nn.KDELayer(
+            nbins=self.nbins,
             start=-15,
             end=15
         )
         
         
+        self.patternInputLayer = keras.layers.Input([self.nbins,self.nweights])
+        
         self.patternConvLayers = []
-        for filterSize,kernelSize in [
-            [16,5],
+        for ilayer,(filterSize,kernelSize) in enumerate([
             [16,4],
             [16,4],
             [16,4],
-        ]:
+            [16,4],
+        ]):
             self.patternConvLayers.append(
                 keras.layers.Conv1D(
                     filterSize,
@@ -69,26 +74,29 @@ class E2EMax():
                     activation=self.activation,
                     kernel_initializer='lecun_normal',
                     kernel_regularizer=keras.regularizers.l2(regloss),
+                    name='pattern_'+str(ilayer+1)
                 )
             )
             
+        self.positionInputLayer = keras.layers.Input(patternConvLayers[-1].shape[1:])
             
         self.positionConvLayers = []
-        for filterSize,kernelSize,strides in [
+        for ilayer,(filterSize,kernelSize,strides) in enumerate([
             [16,1,1],
             [16,1,1],
             [8,16,1],
             [8,1,1],
-        ]:
+        ]):
             self.positionConvLayers.append(
                 keras.layers.Conv1D(
                     filterSize,
                     kernelSize,
                     strides=strides,
-                    padding='valid',
+                    padding='same',
                     activation=self.activation,
                     kernel_initializer='lecun_normal',
                     kernel_regularizer=keras.regularizers.l2(regloss),
+                    name='position_'+str(ilayer+1)
                 )
             )
 
@@ -98,6 +106,7 @@ class E2EMax():
                 activation=None,
                 kernel_initializer='lecun_normal',
                 kernel_regularizer=keras.regularizers.l2(regloss),
+                name='position_final'
             )
         ]
         
@@ -114,27 +123,25 @@ class E2EMax():
         
                
         self.assocConvLayers = []
-        for filterSize in [20,20]:
+        for ilayer,filterSize in enumerate([20,20]):
             self.assocConvLayers.extend([
-                keras.layers.Conv1D(
+                keras.layers.Dense(
                     filterSize,
-                    1,
-                    padding='same',
                     activation=self.activation,
                     kernel_initializer='lecun_normal',
                     kernel_regularizer=keras.regularizers.l2(regloss),
+                    name='association_'+str(ilayer)
                 ),
                 keras.layers.Dropout(0.1),
             ])
             
         self.assocConvLayers.extend([
-            keras.layers.Conv1D(
+            keras.layers.Dense(
                 1,
-                1,
-                padding='same',
                 activation='sigmoid',
                 kernel_initializer='lecun_normal',
                 kernel_regularizer=keras.regularizers.l2(regloss),
+                name='association_final'
             )
         ])
         
@@ -143,8 +150,6 @@ class E2EMax():
         for layer in layerList[1:]:
             outputLayer = layer(outputLayer)
         return outputLayer
-        
-        
         
     def getInputs(self):
         return self.inputLayer
@@ -165,7 +170,7 @@ class E2EMax():
         return self.getTrackZ0(inputs)
         
     def getHists(self,value,weights):
-        return self.kdeLayer([value,weights])
+        return self.histLayer([value,weights])
         
     def getPVPosition(self,hists):
         #pattern [batch,bins,filters]

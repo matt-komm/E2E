@@ -149,7 +149,7 @@ class KDEHistogramOp:
             {
                 for (int ivalue = 0; ivalue < nValues; ++ivalue)
                 {
-                    const float valueClamped = addOverflow ? clamp(
+                    const float valueClamped = addOverflow ? utils::clamp(
                         values(ibatch,ivalue),
                         lowerBinEdges[0],
                         lowerBinEdges[nBins]

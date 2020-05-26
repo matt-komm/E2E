@@ -10,7 +10,7 @@ import unittest
 from sklearn.neighbors import KernelDensity
 
 from kde_histogram import KDEHistogram
-from histogram_max import *
+from histogram_max import histogram_max_sample_module, HistogramMax
 
 def makeModel(nelem,nbins,start,end,kernel,bandwidth):
     class TestModel():
@@ -185,24 +185,33 @@ class KDETest(unittest.TestCase):
     
 class HistogramMaxSampleTest(unittest.TestCase):
     def testHistSingle(self):
+        numpy.random.seed(12345)
         sess = K.get_session()
         for n in range(2,200,10):
             hists = tf.placeholder(tf.float32, shape=(1, n,1))
-            histMax = histogram_max_sample_module.histogram_max_sample(hists)
+            randoms = tf.placeholder(tf.float32, shape=(1,1))
+            histMax = histogram_max_sample_module.histogram_max_sample(hists,randoms)
+            
             for i in range(hists.shape[1]):
                 val = numpy.zeros(hists.shape)
                 val[0,i,0] = 1
                 self.assertEqual(sess.run(histMax,feed_dict={
-                    hists:val
+                    hists:val,
+                    randoms:numpy.random.uniform(0,1,size=(1,1))
                 })[0,0],i)
-                
+            
             
     def testHistSample(self):
+        numpy.random.seed(12345)
+    
+    
         sess = K.get_session()
         hists = tf.placeholder(tf.float32, shape=(100, 200,1))
-        histMax = histogram_max_sample_module.histogram_max_sample(hists)
+        randoms = tf.placeholder(tf.float32, shape=(100,1))
+        histMax = histogram_max_sample_module.histogram_max_sample(hists,randoms)
         
         val = numpy.zeros(hists.shape)
+        
         
         for b in range(hists.shape[0]):
             for n in range(5):
@@ -210,11 +219,11 @@ class HistogramMaxSampleTest(unittest.TestCase):
                 val[b,i,0] = numpy.random.uniform(0.1,0.9)
         val/=numpy.sum(val,axis=1,keepdims=True)
         
-        
         result = numpy.zeros(hists.shape)
         
         for t in range(10000):
-            sampled = sess.run(histMax,feed_dict={hists:val})
+            rnd = numpy.random.uniform(0,1,size=randoms.shape)
+            sampled = sess.run(histMax,feed_dict={hists:val, randoms:rnd})
             for b in range(hists.shape[0]):
                 result[b,int(sampled[b,0]),0] += 1.
                 

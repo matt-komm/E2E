@@ -2,22 +2,25 @@
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/shape_inference.h"
 
+#include "Utils.h"
 #include "Kernels.h"
 
 #include <iostream>
+#include <limits>
 
 using namespace tensorflow;
 using namespace tensorflow::shape_inference;
 
 REGISTER_OP("HistogramMaxSample")
     .Input("hists: float")
+    .Input("randoms: float")
     .Output("output: float")
     .SetShapeFn([](InferenceContext* c) 
     {
         ShapeHandle values_input_shape = c->input(0);
 
         ShapeHandle ouput_shape = c->MakeShape({
-            c->Dim(values_input_shape,0), //batch
+            c->Dim(values_input_shape,0), //batches
             c->Dim(values_input_shape,2) //hists
         
         });
@@ -58,6 +61,7 @@ class HistogramMaxSampleOp:
             }
         
             const Tensor& values_input_tensor = context->input(0);
+            const Tensor& random_input_tensor = context->input(1);
 
             TensorShape outputShape({
                 values_input_tensor.dim_size(0),
@@ -70,27 +74,35 @@ class HistogramMaxSampleOp:
                 context->allocate_output(0, outputShape, &output_tensor)
             );
             
+            //inputs shape: [batch,bins,hists]
             const auto inputs = values_input_tensor.tensor<float,3>();
+            
+            //randoms shape: [batch,hists]
+            const auto randoms = random_input_tensor.tensor<float,2>();
+            
+            //outputs shape: [batch,hists]
             auto outputs = output_tensor->tensor<float,2>();
             
             for (int ibatch = 0; ibatch<values_input_tensor.dim_size(0); ++ibatch)
             {   
                 for (int ihist = 0; ihist<values_input_tensor.dim_size(2); ++ihist)
                 {
+                    //adding small minimum value ensures sum>0 so if histogram empty or all negative
+                    //uniform sampling is still applied
                     float sum = 0;
-                    for (int ivalue = 0; ivalue<values_input_tensor.dim_size(1); ++ivalue)
+                    for (int ibin = 0; ibin<values_input_tensor.dim_size(1); ++ibin)
                     {
-                        sum += std::fabs(inputs(ibatch,ivalue,ihist));
+                        sum += std::max<float>(std::numeric_limits<float>::min(),inputs(ibatch,ibin,ihist));
                     }
-                    std::uniform_real_distribution<float> dist(0,sum);
-                    float value = dist(*generator_);
+                    float rnd_value = utils::clamp<float>(randoms(ibatch,ihist),0,1)*sum;
+                    
                     outputs(ibatch,ihist) = 0;
-                    for (int ivalue = 0; ivalue<values_input_tensor.dim_size(1); ++ivalue)
+                    for (int ibin = 0; ibin<values_input_tensor.dim_size(1); ++ibin)
                     {
-                        sum -= std::fabs(inputs(ibatch,ivalue,ihist));
-                        if (sum<value)
+                        sum -= std::max<float>(std::numeric_limits<float>::min(),inputs(ibatch,ibin,ihist));
+                        if (sum<rnd_value)
                         {
-                            outputs(ibatch,ihist) = ivalue;
+                            outputs(ibatch,ihist) = ibin;
                             break;
                         }
                     }

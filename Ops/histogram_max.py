@@ -35,13 +35,19 @@ class HistogramMax(keras.engine.Layer):
         self.supports_masking = False
         
     def build(self, input_shape):
+        assert len(input_shape)==2
+        hists_shape,randoms_shape = input_shape
+        assert len(hists_shape)==3
+        assert len(randoms_shape)==2
+        
         super(HistogramMax, self).build(input_shape)
 
     def call(self, inputs, mask=None):
+        hists,randoms = inputs
         return tf.case([(
             tf.keras.backend.learning_phase(),
-            lambda: histogram_max_sample_module.histogram_max_sample(inputs)
-        )],default=lambda: tf.argmax(inputs,axis=1))
+            lambda: histogram_max_sample_module.histogram_max_sample(hists,randoms)
+        )],default=lambda: tf.argmax(hists,axis=1))
         
     def compute_output_shape(self,input_shape):
         return (input_shape[0],input_shape[2])
