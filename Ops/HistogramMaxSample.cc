@@ -15,6 +15,7 @@ REGISTER_OP("HistogramMaxSample")
     .Input("hists: float")
     .Input("randoms: float")
     .Output("output: float")
+    .Attr("bias: float")
     .SetShapeFn([](InferenceContext* c) 
     {
         ShapeHandle hists_input_shape = c->input(0);
@@ -35,10 +36,19 @@ REGISTER_OP("HistogramMaxSample")
 class HistogramMaxSampleOp:
     public OpKernel
 {  
+    protected:
+        float bias_;
+
     public:
         explicit HistogramMaxSampleOp(OpKernelConstruction* context):
             OpKernel(context)
         {
+            OP_REQUIRES_OK(context,context->GetAttr("bias",&bias_));
+            OP_REQUIRES(
+                context,
+                (bias_>0),
+                errors::InvalidArgument("Bias required to be >0")
+            );
         }
 
         virtual ~HistogramMaxSampleOp()
@@ -79,14 +89,18 @@ class HistogramMaxSampleOp:
                     float sum = 0;
                     for (int ibin = 0; ibin<hists_input_tensor.dim_size(1); ++ibin)
                     {
-                        sum += std::max<float>(std::numeric_limits<float>::min(),hists(ibatch,ibin,ihist));
+                        sum += std::max<float>(0.,hists(ibatch,ibin,ihist));
                     }
+                    const float minFill = sum*bias_/hists_input_tensor.dim_size(1);
+                    sum += minFill*hists_input_tensor.dim_size(1);
+                    
                     float rnd_value = utils::clamp<float>(randoms(ibatch,ihist),0,1)*sum;
                     
                     outputs(ibatch,ihist) = 0;
                     for (int ibin = 0; ibin<hists_input_tensor.dim_size(1); ++ibin)
                     {
-                        sum -= std::max<float>(std::numeric_limits<float>::min(),hists(ibatch,ibin,ihist));
+                        const float value = std::max<float>(0.0f,hists(ibatch,ibin,ihist))+minFill;
+                        sum -= value;
                         if (sum<rnd_value)
                         {
                             outputs(ibatch,ihist) = ibin;

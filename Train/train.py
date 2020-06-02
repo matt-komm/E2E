@@ -57,7 +57,7 @@ logging.info("TensorFlow: %s (%s)"%(tf.__version__,os.path.dirname(tf.__file__))
 devices = vtx.Devices(requireGPU=args.gpu)
 
 logging.info("Output folder: %s"%args.outputFolder)
-logging.info("Learning rate: %i"%args.lr)
+logging.info("Learning rate: %.3e"%args.lr)
 logging.info("Epochs: %i"%args.epochs)
 logging.info("Batch size: %i"%args.batchSize)
 logging.info("Test fraction: %.2f"%args.testFraction)
@@ -88,7 +88,7 @@ pipeline = vtx.Pipeline(inputFiles,testFraction=args.testFraction)
 
 #TODO: make each model part a separate model; build the full model by calling them
 
-from vtx.nn import E2EMax as Network
+from vtx.nn import E2ERef as Network
 shutil.copyfile(inspect.getsourcefile(Network),os.path.join(args.outputFolder,"Network.py"))
 
 network = Network(

@@ -17,6 +17,7 @@ REGISTER_OP("HistogramMaxSampleGrad")
     .Input("gradients: float")
     .Output("gradients_hists: float")
     .Output("gradients_randoms: float")
+    .Attr("bias: float")
     .SetShapeFn([](InferenceContext* c) 
     {
         c->set_output(0,c->input(0));
@@ -29,10 +30,19 @@ REGISTER_OP("HistogramMaxSampleGrad")
 class HistogramMaxSampleGradOp:
     public OpKernel
 {  
+    protected:
+        float bias_;
+    
     public:
         explicit HistogramMaxSampleGradOp(OpKernelConstruction* context):
             OpKernel(context)
         {
+            OP_REQUIRES_OK(context,context->GetAttr("bias",&bias_));
+            OP_REQUIRES(
+                context,
+                (bias_>0),
+                errors::InvalidArgument("Bias required to be >0")
+            );
         }
 
         virtual ~HistogramMaxSampleGradOp()
@@ -80,25 +90,33 @@ class HistogramMaxSampleGradOp:
                     float sum = 0;
                     for (int ibin = 0; ibin<hists_input_tensor.dim_size(1); ++ibin)
                     {
-                        sum += std::max<float>(std::numeric_limits<float>::min(),hists(ibatch,ibin,ihist));
+                        sum += std::max<float>(0.0f,hists(ibatch,ibin,ihist));
                     }
+                    
+                    const float minFill = sum*bias_/hists_input_tensor.dim_size(1);
+                    sum += minFill*hists_input_tensor.dim_size(1)+std::numeric_limits<float>::min();
+                    
                     float rnd_value = utils::clamp<float>(randoms(ibatch,ihist),0,1)*sum;
                     
                     //set no gradients for randoms
                     //note: returning a simple constant in tf.RegisterGradient does not work
-                    gradients_randoms(ibatch,ihist) = 0; 
+                    gradients_randoms(ibatch,ihist) = 0.0f; 
                     
+                    const float integral = sum;
                     for (int ibin = 0; ibin<hists_input_tensor.dim_size(1); ++ibin)
                     {
                         //init gradients here so do not break loop
-                        gradients_hists(ibatch,ibin,ihist) = 0;
+                        const float value = std::max<float>(0.0f,hists(ibatch,ibin,ihist))+minFill;
+                        const float weight = value/integral;
+                        gradients_hists(ibatch,ibin,ihist) = 0.0f;//-gradients(ibatch,ihist)*weight;
                         
-                        sum -= std::max<float>(std::numeric_limits<float>::min(),hists(ibatch,ibin,ihist));
+                        sum -= value;
                         if (sum<rnd_value)
                         {
-                            gradients_hists(ibatch,ibin,ihist) = gradients(ibatch,ihist);
+                            gradients_hists(ibatch,ibin,ihist) = gradients(ibatch,ihist);//*weight;
                             rnd_value = -1; //yields false for all following bins since sum>0 w/o breaking loop
                         }
+                        
                     }
                 }
             }

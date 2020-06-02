@@ -62,7 +62,7 @@ class E2EMax():
         
         self.patternConvLayers = []
         for ilayer,(filterSize,kernelSize) in enumerate([
-            [16,3],
+            [1,3],
             #[16,4],
             #[16,4],
             #[16,4],
@@ -84,17 +84,19 @@ class E2EMax():
         self.positionMax = vtxops.HistogramMax()
         
         self.positionDenseLayers = []
+        
         for ilayer,nodes in enumerate([20]):
             self.positionDenseLayers.extend([
                 keras.layers.Dense(
                     nodes,
-                    activation='relu',
+                    activation=self.activation,
                     kernel_initializer='lecun_normal',
                     kernel_regularizer=keras.regularizers.l2(regloss),
                     name='position_dense_'+str(ilayer+1)
                 ),
-                keras.layers.Dropout(0.1) 
+                #keras.layers.Dropout(0.1) 
             ])
+        
         self.positionDenseLayers.append(
             keras.layers.Dense(
                 1,

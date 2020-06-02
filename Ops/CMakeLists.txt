@@ -57,6 +57,7 @@ set(pythonfiles
     test_ops.py
     kde_histogram.py
     histogram_max.py
+    SymConv1D.py
 )
 
 foreach(pyfile ${pythonfiles})
