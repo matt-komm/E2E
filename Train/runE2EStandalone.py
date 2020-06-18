@@ -20,12 +20,23 @@ position_graph_def.ParseFromString(open("hybridv2_position.pb","rb").read())
 hists_input,pv_position_output = (tf.graph_util.import_graph_def(position_graph_def, name="position", return_elements=['hists_input','pv_position_output']))
 
 
+diff = []
+N=10000
+n = 0
 for batch in pipeline.generate(
     1,
     nFiles=max(3,len(inputFiles)),
     isTraining=True
 ):
+    if n%100==0:
+        print ("processing %i/%i"%(n,N))
     
+    if n>N:
+        break
+    n+=1
+    
+    
+        
     weights = sess.run(
         weights_output.outputs[0],
         feed_dict = {track_input.outputs[0]: batch['X'][0]}
@@ -35,13 +46,18 @@ for batch in pipeline.generate(
     #print (batch['X'].shape)
     hist = numpy.expand_dims(numpy.expand_dims(hist,axis=2),axis=0)
     
-    print (sess.run(
+    predictedPosition = sess.run(
         pv_position_output.outputs[0],
-        feed_dict = {hists_input.outputs[0]: hist})
-    )
-    print (batch['y_avg'][0])
+        feed_dict = {hists_input.outputs[0]: hist}
+    )[0,0]
+    
+    truePosition = batch['y_avg'][0,0]
+    
+    diff.append(predictedPosition-truePosition)
+    
+    
 
-    print ()
+print (numpy.percentile(numpy.array(diff),[5.,15.87,50.,84.13,95.]))
 
 
 
