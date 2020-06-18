@@ -148,7 +148,8 @@ for epoch in range(args.epochs):
     #distributions = []
     #learning_rate = args.lr/(1+args.kappa*epoch)
     optimizer = keras.optimizers.Adam(lr=learning_rate)
-    model = network.createModel(optimizer)
+    model = network.createModel()
+    model.compile(optimizer)
     
     if epoch==0:
         model.summary()
@@ -168,23 +169,38 @@ for epoch in range(args.epochs):
         #    break
 
         
-
+        #add random shift and flip for extra regularization
+        randomZ0Shift = numpy.random.uniform(-1,1,size=(batch['X'].shape[0],1,1))
+        randomZ0Flip = numpy.sign(numpy.random.uniform(-1,1,size=(batch['X'].shape[0],1,1)))
         
-        #add random shift for extra regularization
-        randomZ0Shift = numpy.random.uniform(-0.5,0.5,size=(batch['X'].shape[0],1,1))
-        batch['X']+=numpy.concatenate([
+        randomZ0ShiftX = numpy.concatenate([
             numpy.repeat(randomZ0Shift,batch['X'].shape[1],axis=1),
             numpy.zeros((batch['X'].shape[0],batch['X'].shape[1],batch['X'].shape[2]-1))
         ],axis=2)
+        
+        randomZ0SFlipX = numpy.concatenate([
+            numpy.repeat(randomZ0Flip,batch['X'].shape[1],axis=1),
+            numpy.ones((batch['X'].shape[0],batch['X'].shape[1],batch['X'].shape[2]-1))
+        ],axis=2)
+        
+      
+        batch['X']+=randomZ0ShiftX
+        batch['X']*=randomZ0SFlipX
+        
+        
         batch['y']+=randomZ0Shift[:,:,0]
+        batch['y']*=randomZ0Flip[:,:,0]
+        
         batch['y_avg']+=randomZ0Shift[:,:,0]
+        batch['y_avg']*=randomZ0Flip[:,:,0]
         
-        
+        '''
         for i in range(batch['X'].shape[0]):
             for c in range(batch['X'].shape[1]):
                 if batch['X'][i,c,1] > 500:
                     for j in range(batch['X'].shape[2]):
                         batch['X'][i,c,j] = 0.
+        '''
         '''
         flatX = numpy.reshape(batch['X'],[-1,batch['X'].shape[2]])
         flatX = flatX[flatX[:,1]>0]

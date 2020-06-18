@@ -16,11 +16,11 @@ class Accessor:
         return sum(map(lambda x: x.shape[0],batch['X']))
        
     @staticmethod 
-    def readFile(batch, f,start,end):
-        batch['X'].append(f['X'][start:end])
-        batch['assoc'].append(f['assoc'][start:end])
-        batch['y'].append(f['y'][start:end])
-        batch['y_avg'].append(f['y_avg'][start:end])
+    def readFile(batch, f, indices):
+        batch['X'].append(f['X'][indices])
+        batch['assoc'].append(f['assoc'][indices])
+        batch['y'].append(f['y'][indices])
+        batch['y_avg'].append(f['y_avg'][indices])
         
     @staticmethod
     def concatenateBatch(batch):
@@ -45,7 +45,7 @@ class Pipeline():
         def totalsize(fileList):
             n = 0
             for f in fileList:
-                n+=f['size']-f['index']
+                n+=len(f['indices'])-f['index']
             return n
           
         while readIndex==0 or readIndex<len(self.inputFileList) or totalsize(openFiles)>batchSize:
@@ -54,19 +54,29 @@ class Pipeline():
                 filePath = self.inputFileList[fileIndices[readIndex]]
                 f = h5py.File(filePath,'r')
                 if isTraining:
-                    openFiles.append({
+                    fileDescription = {
                         'path':filePath,
                         'handle':f,
+                        'start':0,
                         'index':0,
-                        'size':int(self.dataAccessor.fileSize(f)*min(1.,max(0.,1.-self.testFraction)))
-                    })
+                        'end':int(self.dataAccessor.fileSize(f)*min(1.,max(0.,1.-self.testFraction)))
+                    }
+                    
                 else:
-                    openFiles.append({
+                    fileDescription = {
                         'path':filePath,
                         'handle':f,
-                        'index':int(self.dataAccessor.fileSize(f)*min(1.,max(0.,1.-self.testFraction))),
-                        'size':self.dataAccessor.fileSize(f)
-                    })
+                        'start':int(self.dataAccessor.fileSize(f)*min(1.,max(0.,1.-self.testFraction))),
+                        'index':0,
+                        'end':self.dataAccessor.fileSize(f)
+                    }
+                fileDescription['indices'] = numpy.arange(fileDescription['start'],fileDescription['end'])
+                
+                #numpy.random.shuffle(fileDescription['indices'])
+                    
+                    
+                openFiles.append(fileDescription)
+                
                 readIndex+=1
         
             if totalsize(openFiles)>batchSize:  
@@ -76,13 +86,13 @@ class Pipeline():
                     #print '  batch size ',currentBatchSize
                     chosenFileIndex = random.randint(0,len(openFiles)-1)
                     f = openFiles[chosenFileIndex]
-                    nread = min([f['size']-f['index'],max(1,int(1.*batchSize/nFiles)),batchSize-currentBatchSize])
+                    nread = min([len(f['indices'])-f['index'],max(1,int(1.*batchSize/nFiles)),batchSize-currentBatchSize])
                     
-                    #print '  reading ',f['path'],f['index'],f['index']+nread,f['size']
+                    #print ('  reading ',f['path'],f['index'],f['indices'][f['index']:f['index']+nread])
                     
-                    self.dataAccessor.readFile(batch,f['handle'],f['index'],f['index']+nread)
+                    self.dataAccessor.readFile(batch,f['handle'],numpy.sort(f['indices'][f['index']:f['index']+nread]))
                     f['index']+=nread
-                    if (f['index']+1)>=f['size']:
+                    if (f['index']+1)>=len(f['indices']):
                         elem = openFiles.pop(chosenFileIndex)
                         #print 'dequeue ',elem,len(openFiles)
                     

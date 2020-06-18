@@ -1,5 +1,6 @@
 import tensorflow as tf
 import keras
+import keras.backend as K
 import vtx
 import vtxops
 import numpy
@@ -24,7 +25,7 @@ class E2ERef():
         self.inputLayer = keras.layers.Input(shape=(self.ntracks,self.nfeatures))
         
         self.weightConvLayers = []
-        for ilayer,filterSize in enumerate([10]):
+        for ilayer,filterSize in enumerate([10,10]):
             self.weightConvLayers.extend([
                 keras.layers.Dense(
                     filterSize,
@@ -48,9 +49,7 @@ class E2ERef():
         #self.weightConvLayers.append(keras.layers.Dropout(0.1))
         
         
-        self.histValueInputLayer = keras.layers.Input([self.ntracks])
-        self.histWeightInputLayer = keras.layers.Input([self.ntracks,self.nweights])
-        
+
         self.histLayer = vtxops.KDEHistogram(
             nbins=self.nbins,
             start=-15,
@@ -111,6 +110,7 @@ class E2ERef():
             )
         ]
         
+        
         if self.nlatent>0:
             self.latentDenseLayers = [
                 keras.layers.Dense(
@@ -121,7 +121,8 @@ class E2ERef():
                 )
             ]
         
-        
+        #z0 -> dz0; + other track features + latent features
+        self.assocInputLayer = keras.layers.Input([10+self.nlatent]) 
                
         self.assocConvLayers = []
         for ilayer,filterSize in enumerate([20,20]):
@@ -159,7 +160,8 @@ class E2ERef():
         return keras.layers.Lambda(lambda x: x[:,:,0])(inputs)
         
     def getTrackFeatures(self,inputs):
-        return keras.layers.Lambda(lambda x: x[:,:,1:])(inputs)
+        #NOTE: slicing here 1-6 to only use pt,eta,chi2,bendchi2,nstubs
+        return keras.layers.Lambda(lambda x: x[:,:,1:6])(inputs)
         
     def getHistWeights(self,inputs):
         weightFeatures = self.getTrackFeatures(inputs)
@@ -228,18 +230,22 @@ class E2ERef():
         association = self.applyLayerList(associationFeatures, self.assocConvLayers)
         return keras.layers.Lambda(lambda x: x[:,:,0])(association)
     
-    def createModel(self,optimizer):
+    def createModel(self):
         class Model():
             def __init__(self,network):
                 self.network = network
                 
                 self.inputLayer = self.network.getInputs()
+                self.patternInputLayer = self.network.patternInputLayer
+                self.assocInputLayer = self.network.assocInputLayer
+                
                 self.histValueLayer = self.network.getHistValue(self.inputLayer)
                 self.histWeightsLayer = self.network.getHistWeights(self.inputLayer)
                 self.histsLayer = self.network.getHists(
                     self.histValueLayer,
                     self.histWeightsLayer
                 )
+                
                 
                 self.pvPositionLayer,self.pvlatentLayer = self.network.getPVPosition(self.histsLayer)
                 
@@ -260,12 +266,13 @@ class E2ERef():
                 )
                 self.associationLayer = self.network.getAssociation(self.associationFeatureLayer)
                 
+                #for export
+                #self.weightModel = keras.models.Model(inputs=[self.inputLayer],outputs=[self.histWeightsLayer])
+                #self.pvPositionModel = keras.models.Model(inputs=[self.patternInputLayer],outputs=[self.pvPositionLayer])
+                #self.associationModel = keras.models.Model(inputs=[self.assocInputLayer],outputs=[self.associationLayer])
                 
-                self.weightModel = keras.models.Model(inputs=[self.inputLayer],outputs=[self.histWeightsLayer])
-                self.histModel = keras.models.Model(inputs=[self.inputLayer],outputs=[self.histsLayer])
-                self.pvPositionModel = keras.models.Model(inputs=[self.inputLayer],outputs=[self.pvPositionLayerAveraged])
-                self.associationModel = keras.models.Model(inputs=[self.inputLayer],outputs=[self.pvPositionLayerAveraged,self.associationLayer])
-                
+                #for training
+                self.fullModel = keras.models.Model(inputs=[self.inputLayer],outputs=[self.pvPositionLayerAveraged,self.associationLayer])
                 
                 wq90 = tf.contrib.distributions.percentile(
                     self.histWeightsLayer,
@@ -273,8 +280,47 @@ class E2ERef():
                     axis=1,
                     interpolation='nearest',
                 )
-                self.associationModel.add_loss(0.01*tf.reduce_mean(tf.abs(wq90-1.)))
+                self.fullModel.add_loss(0.001*tf.reduce_mean(tf.abs(wq90-1.)))
                 
+                
+            def export(self,name):
+                
+                sess = K.get_session()
+                tf_trackInput = tf.placeholder('float32',shape=(None,10),name="track_input")
+                #expand dims to fake track dim
+                trackInputLayer = keras.layers.Input(tensor=tf.expand_dims(tf_trackInput,axis=1))
+                histWeightsLayer = self.network.getHistWeights(trackInputLayer)
+                #slice track dim
+                weightOutput = tf.identity(histWeightsLayer[:,0,:],name="weights_output")
+                print (weightOutput)
+                
+                const_graph_weight = tf.graph_util.convert_variables_to_constants(
+                    sess,
+                    sess.graph.as_graph_def(),
+                    ["weights_output"]
+                )
+                #print (const_graph)
+                tf.train.write_graph(const_graph_weight,"",name+"_weight.pb", as_text=False)
+                #print ([n.name for n in sess.graph.as_graph_def().node])
+                
+                
+                tf_histsInput = tf.placeholder('float32',shape=(None,self.network.nbins,self.network.nweights),name="hists_input")
+                histsInputLayer = keras.layers.Input(tensor=tf_histsInput)
+                pvPositionLayer,pvlatentLayer = self.network.getPVPosition(histsInputLayer)
+                
+                histsInputLayerFlipped = keras.layers.Lambda(lambda x: tf.reverse(x,axis=[1]))(histsInputLayer)
+                pvPositionLayerFlipped,pvlatentLayerFlipped = self.network.getPVPosition(histsInputLayerFlipped)
+                pvPositionLayerAveraged = keras.layers.Lambda(lambda x: 0.5*(x[0]-x[1]))([pvPositionLayer,pvPositionLayerFlipped])
+                pvPositionOutput = tf.identity(pvPositionLayerAveraged,name="pv_position_output")
+                
+                const_graph_position = tf.graph_util.convert_variables_to_constants(
+                    sess,
+                    sess.graph.as_graph_def(),
+                    ["pv_position_output"]
+                )
+                tf.train.write_graph(const_graph_position,"",name+"_position.pb", as_text=False)
+                 
+            def compile(self,optimizer):
                 def pseudohuber(x,d=0.05,s=1.,q=10.):
                     # d controls convexness at minimum (smaller = sharper)
                     # s is the linear slope for large values
@@ -325,7 +371,7 @@ class E2ERef():
                     
                     return tf.square(q85-q15)+tf.abs(q95-q5)
                 
-                self.associationModel.compile(
+                self.fullModel.compile(
                     optimizer,
                     loss=[
                         lambda x,y: pseudohuber(x-y),
@@ -348,28 +394,28 @@ class E2ERef():
                 pass
                 
             def train_on_batch(self,batch):
-                lossList = self.associationModel.train_on_batch([batch['X']],[batch['y_avg'],batch['assoc']])
+                lossList = self.fullModel.train_on_batch([batch['X']],[batch['y_avg'],batch['assoc']])
                 #print ("z0 loss: %.4f (mae: %.2f), assoc loss: %.4f (acc: %.2f%%)"%(lossList[1],lossList[3],lossList[2],100.*lossList[4]))
                 return lossList[1]
                 
             def test_on_batch(self,batch):
-                lossList = self.associationModel.test_on_batch([batch['X']],[batch['y_avg'],batch['assoc']])
+                lossList = self.fullModel.test_on_batch([batch['X']],[batch['y_avg'],batch['assoc']])
                 #print ("z0 loss: %.4f (mae: %.2f), assoc loss: %.4f (acc: %.2f%%)"%(lossList[1],lossList[3],lossList[2],100.*lossList[4]))
                 return lossList[1]
                 
             def predict_on_batch(self,batch):
-                return self.associationModel.predict_on_batch([batch['X']])
+                return self.fullModel.predict_on_batch([batch['X']])
                 
             def save_weights(self,path):
-                self.associationModel.save_weights(path)
+                self.fullModel.save_weights(path)
                 
             def load_weights(self,path):
-                self.associationModel.load_weights(path)
+                self.fullModel.load_weights(path)
                 
             def summary(self):
-                self.associationModel.summary()
+                self.fullModel.summary()
                 
         return Model(self)
 
-    
+network = E2ERef
 

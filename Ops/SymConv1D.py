@@ -9,6 +9,7 @@ class SymConv1D(keras.engine.Layer):
         kernel_var_size,
         strides=1,
         padding='same',
+        activation=None,
         kernel_initializer='glorot_uniform',
         bias_initializer='zeros',
         use_bias=True,
@@ -19,6 +20,7 @@ class SymConv1D(keras.engine.Layer):
         self.kernel_var_size = kernel_var_size  
         self.strides = strides
         self.padding = padding
+        self.activation = activation
         self.kernel_initializer = kernel_initializer
         self.bias_initializer = bias_initializer
         self.use_bias = use_bias

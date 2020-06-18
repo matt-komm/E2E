@@ -352,5 +352,5 @@ class E2EMax():
                 
         return Model(self)
 
-    
+network = E2EMax
 
